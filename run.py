@@ -12,7 +12,8 @@
 TEMPLATE = r"examples\dms_template.docx"
 
 # Excel sheet listing the reports to build: one row per report.
-#   column "scade_report": the SCADE report file (relative to the sheet)
+#   column "scade_report": the SCADE report file (relative to the sheet);
+#                          .docx, .rtf or .doc (.rtf/.doc need USE_WORD = True)
 #   column "output":       name of the report to create (optional)
 #   other columns:         values for the {{placeholders}} in the template
 REPORTS_SHEET = r"examples\reports.xlsx"

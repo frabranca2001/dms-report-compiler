@@ -323,6 +323,23 @@ def main():
                 ("Autobrake", 2), ("BITE", 1), ("ModeLogic", 2)], image=img)
     make_scade(OUT / "scade_report_C.docx", "Cabin Pressure Controller",
                [("PressLoop", 1), ("OutflowValve", 1)], typed_numbers=True)
+    # an RTF report, as SCADE can produce: built as .docx, saved as .rtf by Word
+    tmp_docx = OUT / "_scade_report_D.docx"
+    make_scade(tmp_docx, "Flap Control Unit",
+               [("FlapCmd", 2), ("Asymmetry", 1), ("PowerDrive", 1)], image=img)
+    try:
+        import win32com.client
+        word = win32com.client.DispatchEx("Word.Application")
+        try:
+            word.AutomationSecurity = 3
+            d = word.Documents.Open(str(tmp_docx.resolve()), AddToRecentFiles=False)
+            d.SaveAs2(str((OUT / "scade_report_D.rtf").resolve()), 6)  # 6 = RTF
+            d.Close(False)
+        finally:
+            word.Quit()
+    except Exception as exc:
+        print("RTF example not created (needs Word):", exc)
+    tmp_docx.unlink()
     img.unlink()
 
     wb = Workbook()
@@ -340,6 +357,9 @@ def main():
     ws.append(["scade_report_C.docx", "DMS_CabinPressure.docx",
                "Cabin Pressure Controller", "triplex controller", "DMS-0003", "A",
                "2026-11-13", "F. Branca", 0.8, "yes", 3])
+    ws.append(["scade_report_D.rtf", "DMS_FlapControl.docx", "Flap Control Unit",
+               "dual-channel controller", "DMS-0004", "A", "2026-11-13",
+               "F. Branca", 207, "no", ""])
     wb.save(OUT / "reports.xlsx")
     print("Examples written to", OUT)
 

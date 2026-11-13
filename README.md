@@ -7,6 +7,9 @@ Copies the DMS template and inserts the chapters of a SCADE report into it.
 1. Open `run.py` and edit the SETTINGS at the top (template, Excel sheet, output folder).
 2. Press **F5** (VS Code / Visual Studio), or double-click `Build reports.bat`.
 
+SCADE reports can be `.docx`, `.rtf` or `.doc`; `.rtf` and `.doc` files are
+converted with Word first, so they need Word installed and `USE_WORD = True`.
+
 The finished reports appear in the output folder. Missing Python libraries are
 installed automatically on the first run.
 

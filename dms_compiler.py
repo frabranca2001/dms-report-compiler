@@ -2,6 +2,7 @@
 
 Takes a copy of the DMS template (.docx or .docm) and inserts the chapters of a
 SCADE report into it, at the paragraph containing the marker {{SCADE_CHAPTERS}}.
+SCADE reports can be .docx, .rtf or .doc (.rtf/.doc are converted with Word).
 
   * The template is copied part by part, so its front pages, headers, footers,
     macros and styles are untouched.
@@ -24,6 +25,7 @@ import json
 import posixpath
 import re
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -76,9 +78,13 @@ class Package:
 
     def __init__(self, path):
         self.path = Path(path)
-        with zipfile.ZipFile(path) as z:
-            self.order = z.namelist()
-            self.parts = {n: z.read(n) for n in self.order}
+        try:
+            with zipfile.ZipFile(path) as z:
+                self.order = z.namelist()
+                self.parts = {n: z.read(n) for n in self.order}
+        except zipfile.BadZipFile:
+            raise ValueError(f"{self.path.name}: not a .docx/.docm file "
+                             "(and it could not be converted)") from None
         self._xml = {}
         ct = self.xml("[Content_Types].xml")
         main = [o.get("PartName") for o in ct.findall(f"{{{CT}}}Override")
@@ -834,6 +840,35 @@ def refresh_with_word(paths, pdf=False):
         word.Quit()
 
 
+LEGACY_FORMATS = {".rtf", ".doc"}
+
+
+def convert_to_docx(paths, folder):
+    """Convert .rtf/.doc files to .docx with Word. Returns {original: converted};
+    files that could not be converted are left out."""
+    import win32com.client
+    result = {}
+    word = win32com.client.DispatchEx("Word.Application")
+    try:
+        word.Visible = False
+        word.DisplayAlerts = 0
+        word.AutomationSecurity = 3
+        for i, path in enumerate(paths):
+            target = Path(folder) / f"{i}_{Path(path).stem}.docx"
+            try:
+                doc = word.Documents.Open(str(Path(path).resolve()),
+                                          ConfirmConversions=False, ReadOnly=True,
+                                          AddToRecentFiles=False)
+                doc.SaveAs2(str(target), 12)  # 12 = .docx
+                doc.Close(False)
+                result[path] = target
+            except Exception as exc:
+                print(f"WARNING: could not convert {Path(path).name}: {exc}")
+    finally:
+        word.Quit()
+    return result
+
+
 # ============================================================== CLI
 def read_batch(path):
     from openpyxl import load_workbook
@@ -870,26 +905,46 @@ def main(argv=None, config=None):
     if args.config:
         cfg.update(json.loads(Path(args.config).read_text(encoding="utf-8")))
     template = Path(args.template)
+    out_suffix = (".docx" if template.suffix.lower() in LEGACY_FORMATS
+                  else template.suffix)
 
     jobs = []
     if args.batch:
         base = Path(args.batch).parent
         for rec in read_batch(args.batch):
             scade = base / str(rec.pop("scade_report"))
-            name = rec.pop("output", None) or f"{scade.stem}_DMS{template.suffix}"
+            name = rec.pop("output", None) or f"{scade.stem}_DMS{out_suffix}"
             jobs.append((scade, Path(args.out) / str(name), rec))
     elif args.scade:
         vals = dict(s.split("=", 1) for s in args.set)
-        out = Path(args.output or f"{Path(args.scade).stem}_DMS{template.suffix}")
+        out = Path(args.output or f"{Path(args.scade).stem}_DMS{out_suffix}")
         jobs.append((Path(args.scade), out, vals))
     else:
         ap.error("give --batch or --scade")
+
+    # .rtf / .doc inputs are first converted to .docx with Word
+    converted, tmp = {}, None
+    legacy = sorted({p for p in [template, *(j[0] for j in jobs)]
+                     if p.suffix.lower() in LEGACY_FORMATS and p.exists()})
+    if legacy:
+        if args.no_word:
+            print("WARNING: .rtf/.doc files need Word to be converted; "
+                  "they will fail with --no-word / USE_WORD = False.")
+        else:
+            tmp = tempfile.TemporaryDirectory()
+            try:
+                converted = convert_to_docx(legacy, tmp.name)
+                print(f"Converted {len(converted)} of {len(legacy)} "
+                      ".rtf/.doc file(s) to .docx with Word.")
+            except Exception as exc:
+                print(f"WARNING: conversion with Word failed ({exc}).")
 
     done, failed = [], 0
     for scade, out, vals in jobs:
         print(f"{scade.name} -> {out}")
         try:
-            ok, log = compile_report(template, scade, out, vals, cfg,
+            ok, log = compile_report(converted.get(template, template),
+                                     converted.get(scade, scade), out, vals, cfg,
                                      update_on_open=args.no_word)
         except Exception as exc:  # keep going with the other reports
             ok, log = False, [f"  ERROR: {exc}"]
@@ -898,6 +953,8 @@ def main(argv=None, config=None):
         print("\n".join(log))
         print("  OK" if ok else "  FAILED")
         failed += not ok
+    if tmp:
+        tmp.cleanup()
 
     if done and not args.no_word:
         try:

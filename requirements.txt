@@ -1,0 +1,4 @@
+lxml
+openpyxl
+pywin32
+python-docx  # only for make_examples.py

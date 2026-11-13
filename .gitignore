@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+output/
+# real (confidential) reports go here and are never committed
+input/
+~$*
